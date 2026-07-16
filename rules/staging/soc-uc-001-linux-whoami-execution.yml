@@ -82,3 +82,22 @@ references:
 
 max_signals: 100
 actions: []
+
+note: |
+  ## Triage and Analysis
+
+  ### What triggered this alert
+  The whoami command was executed on a Linux host.
+
+  ### What to investigate
+  - Who ran the command and from which parent process?
+  - Was this preceded by any suspicious login activity?
+  - Is the user account expected to be active on this host?
+
+  ### False positive guidance
+  - System administrators running diagnostic commands
+  - Automated scripts using whoami for environment checks
+
+  ### Response steps
+  - Verify with the system owner if this activity was expected
+  - Check for other suspicious commands executed by same user
