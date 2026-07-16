@@ -4,10 +4,10 @@ rule_id: "e95dc932-a8bd-49c9-a21d-d2a5db7334a6"
 
 metadata:
   creation_date: "2026/07/16"
-  updated_date: "2026/07/14"
+  updated_date: "2026/07/15"
   maturity: "production"
   author:
-    - "HRISHIKESH YALAVARTHI - DaC Labv1"
+    - "HRISHIKESH YALAVARTHI - DaC Lab2.0"
 
 name: "SOC-UC-001-Linux-Whoami Execution Detected"
 
