@@ -35,7 +35,7 @@ index:
 
 query: |
   FROM logs-endpoint.events.*
-  | WHERE event.action == "test"
+  | WHERE event.action == "exec"
     AND process.name == "whoami"
   | KEEP @timestamp, host.name, user.name,
          process.name, process.command_line
