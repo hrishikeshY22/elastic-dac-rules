@@ -16,7 +16,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
 
-      # STEP 1: Generate short-lived token from GitHub App
       - name: Generate App Token
         id: app-token
         uses: actions/create-github-app-token@v1
@@ -24,7 +23,6 @@ jobs:
           app-id: ${{ secrets.APP_ID }}
           private-key: ${{ secrets.APP_PRIVATE_KEY }}
 
-      # STEP 2: Checkout using App token (not default token!)
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
@@ -57,7 +55,8 @@ jobs:
               and ".gitkeep" not in f
           ]
 
-          print(f"Changed: {changed}")
+          print(f"Changed staging files: {changed}")
+
           if not changed:
               print("Nothing to promote")
               exit(0)
@@ -65,6 +64,7 @@ jobs:
           promoted = []
           for src in changed:
               if not os.path.exists(src):
+                  print(f"SKIP: {src} not found")
                   continue
               rule = yaml.safe_load(open(src))
               enabled = rule.get("enabled", False)
@@ -77,7 +77,6 @@ jobs:
               promoted.append(dest)
 
           if promoted:
-              # Commit shows as GitHub App bot not personal account
               subprocess.run([
                   "git", "config", "user.name",
                   "elastic-dac-pipeline[bot]"
@@ -89,7 +88,7 @@ jobs:
               subprocess.run(["git","add","rules/prod/"])
               subprocess.run([
                   "git","commit","-m",
-                  f"Promote {len(promoted)} rule(s) to prod [skip ci]"
+                  f"chore: promote {len(promoted)} rule(s) to prod"
               ])
               subprocess.run(["git","push","origin","main"])
               print(f"Promoted {len(promoted)} rules!")
