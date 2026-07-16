@@ -7,7 +7,7 @@ metadata:
   updated_date: "2026/07/15"
   maturity: "production"
   author:
-    - "HRISHIKESH YALAVARTHI - DaC Lab"
+    - "HRISHIKESH YALAVARTHI - DaC Lab2.0"
 
 name: "SOC-UC-001-Linux-Whoami Execution Detected"
 
