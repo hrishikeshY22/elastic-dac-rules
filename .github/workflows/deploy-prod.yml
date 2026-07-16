@@ -1,0 +1,102 @@
+name: Deploy Rules to Elastic PROD
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'rules/prod/**/*.yml'
+
+jobs:
+  deploy:
+    name: Deploy to Elastic PROD
+    runs-on: ubuntu-latest
+    steps:
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install pyyaml requests
+
+      - name: Deploy to Elastic
+        env:
+          ELASTIC_PROD_URL: ${{ secrets.ELASTIC_PROD_URL }}
+          ELASTIC_PROD_API_KEY: ${{ secrets.ELASTIC_PROD_API_KEY }}
+        run: |
+          python3 << 'PYEOF'
+          import yaml, os, glob, requests
+
+          KB = os.environ.get("ELASTIC_PROD_URL","")
+          KEY = os.environ.get("ELASTIC_PROD_API_KEY","")
+
+          if not KB or not KEY:
+              print("No Elastic credentials - skipping deploy")
+              print("Add ELASTIC_PROD_URL and ELASTIC_PROD_API_KEY secrets!")
+              exit(0)
+
+          HEADERS = {
+              "Authorization": f"ApiKey {KEY}",
+              "kbn-xsrf": "true",
+              "Content-Type": "application/json"
+          }
+
+          STRIP = ["schema_version","metadata","id","version",
+                   "revision","created_at","created_by",
+                   "updated_at","updated_by","immutable",
+                   "rule_source","output_index",
+                   "execution_summary","risk_score_mapping",
+                   "severity_mapping","related_integrations",
+                   "required_fields","meta"]
+
+          deployed = failed = 0
+
+          for folder, enabled in [
+              ("rules/prod/enabled", True),
+              ("rules/prod/disabled", False)
+          ]:
+              for f in sorted(glob.glob(f"{folder}/*.yml")):
+                  if ".gitkeep" in f:
+                      continue
+                  rule = yaml.safe_load(open(f))
+                  rid = rule.get("rule_id")
+                  name = rule.get("name", f)
+                  payload = {k:v for k,v in rule.items()
+                             if k not in STRIP}
+                  payload["enabled"] = enabled
+
+                  check = requests.get(
+                      f"{KB}/api/detection_engine/rules?rule_id={rid}",
+                      headers=HEADERS
+                  )
+
+                  if check.status_code == 200:
+                      resp = requests.put(
+                          f"{KB}/api/detection_engine/rules",
+                          headers=HEADERS, json=payload
+                      )
+                      action = "UPDATED"
+                  else:
+                      resp = requests.post(
+                          f"{KB}/api/detection_engine/rules",
+                          headers=HEADERS, json=payload
+                      )
+                      action = "CREATED"
+
+                  if resp.status_code in [200,201]:
+                      print(f"{action}: {name}")
+                      deployed += 1
+                  else:
+                      print(f"FAILED: {name} - {resp.status_code}")
+                      print(f"  {resp.text[:200]}")
+                      failed += 1
+
+          print(f"\nDeployed: {deployed} | Failed: {failed}")
+          if failed > 0:
+              exit(1)
+          PYEOF

@@ -1,0 +1,113 @@
+name: Validate Detection Rules
+
+on:
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  validate:
+    name: Validate Rules in staging
+    runs-on: ubuntu-latest
+    steps:
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install pyyaml jsonschema
+
+      - name: Check YAML syntax
+        run: |
+          FAIL=0
+          for f in $(find rules/staging \
+            -name "*.yml" ! -name ".gitkeep"); do
+            python3 -c "
+          import yaml, sys
+          try:
+              yaml.safe_load(open('$f'))
+              print('PASS: $f')
+          except Exception as e:
+              print('FAIL: $f - ' + str(e))
+              sys.exit(1)
+            " || FAIL=1
+          done
+          [ $FAIL -eq 0 ] || exit 1
+
+      - name: Validate against schema
+        run: |
+          python3 << 'PYEOF'
+          import yaml, json, jsonschema, glob, sys
+          schema = json.load(open("schemas/rule.schema.json"))
+          rules = [r for r in
+                   glob.glob("rules/staging/*.yml")
+                   if ".gitkeep" not in r]
+          if not rules:
+              print("No rules in staging")
+              sys.exit(0)
+          passed = failed = 0
+          for f in sorted(rules):
+              rule = yaml.safe_load(open(f))
+              try:
+                  jsonschema.validate(rule, schema)
+                  print(f"PASS: {f}")
+                  passed += 1
+              except jsonschema.ValidationError as e:
+                  print(f"FAIL: {f}")
+                  print(f"  {e.message}")
+                  failed += 1
+          print(f"\nPassed: {passed} | Failed: {failed}")
+          sys.exit(1 if failed > 0 else 0)
+          PYEOF
+
+      - name: Check severity/risk mapping
+        run: |
+          python3 << 'PYEOF'
+          import yaml, glob, sys
+          MAPPING = {"low":21,"medium":47,"high":73,"critical":99}
+          rules = [r for r in
+                   glob.glob("rules/staging/*.yml")
+                   if ".gitkeep" not in r]
+          failed = 0
+          for f in sorted(rules):
+              rule = yaml.safe_load(open(f))
+              sev = rule.get("severity","")
+              risk = rule.get("risk_score",0)
+              name = rule.get("name", f)
+              if sev in MAPPING and risk != MAPPING[sev]:
+                  print(f"FAIL: {name}")
+                  print(f"  severity={sev} needs risk_score={MAPPING[sev]}, got {risk}")
+                  failed += 1
+              else:
+                  print(f"PASS: {name} [{sev}/{risk}]")
+          sys.exit(1 if failed > 0 else 0)
+          PYEOF
+
+      - name: Check no duplicate rule_ids
+        run: |
+          python3 << 'PYEOF'
+          import yaml, glob, sys
+          seen = {}
+          dups = 0
+          for f in glob.glob("rules/**/*.yml",
+                              recursive=True):
+              if ".gitkeep" in f:
+                  continue
+              rule = yaml.safe_load(open(f))
+              rid = rule.get("rule_id","")
+              name = rule.get("name", f)
+              if rid in seen:
+                  print(f"DUPLICATE: {name}")
+                  print(f"  Same as: {seen[rid]}")
+                  dups += 1
+              else:
+                  seen[rid] = name
+                  print(f"UNIQUE: {name}")
+          print(f"\nDuplicates: {dups}")
+          sys.exit(1 if dups > 0 else 0)
+          PYEOF

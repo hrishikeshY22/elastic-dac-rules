@@ -1,0 +1,78 @@
+name: Promote Rules to Production Folders
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'rules/staging/*.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  promote:
+    name: Promote staged rules to prod
+    runs-on: ubuntu-latest
+    steps:
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 2
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install pyyaml
+
+      - name: Promote rules
+        run: |
+          python3 << 'PYEOF'
+          import yaml, os, shutil, subprocess
+
+          result = subprocess.run(
+              ["git","diff","--name-only","HEAD~1","HEAD",
+               "--","rules/staging/*.yml"],
+              capture_output=True, text=True
+          )
+
+          changed = [
+              f.strip() for f in
+              result.stdout.strip().split("\n")
+              if f.strip().endswith(".yml")
+              and ".gitkeep" not in f
+          ]
+
+          print(f"Changed: {changed}")
+          if not changed:
+              print("Nothing to promote")
+              exit(0)
+
+          promoted = []
+          for src in changed:
+              if not os.path.exists(src):
+                  continue
+              rule = yaml.safe_load(open(src))
+              enabled = rule.get("enabled", False)
+              fname = os.path.basename(src)
+              dest = (f"rules/prod/enabled/{fname}"
+                      if enabled
+                      else f"rules/prod/disabled/{fname}")
+              shutil.copy2(src, dest)
+              print(f"PROMOTED: {src} -> {dest}")
+              promoted.append(dest)
+
+          if promoted:
+              subprocess.run(["git","config","user.name","DaC Automation"])
+              subprocess.run(["git","config","user.email","dac@noreply.github.com"])
+              subprocess.run(["git","add","rules/prod/"])
+              subprocess.run(["git","commit","-m",
+                  f"Promote {len(promoted)} rule(s) to prod [skip ci]"])
+              subprocess.run(["git","push","origin","main"])
+              print(f"Promoted {len(promoted)} rules!")
+          PYEOF

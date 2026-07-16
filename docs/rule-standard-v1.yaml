@@ -1,0 +1,79 @@
+# DaC Standard YAML Rule Template v1
+# Copy this file to rules/staging/ to create a new rule
+
+schema_version: 1
+
+rule_id: ""
+# Generate: python3 -c "import uuid; print(uuid.uuid4())"
+
+metadata:
+  creation_date: ""       # YYYY/MM/DD
+  updated_date: ""        # YYYY/MM/DD
+  maturity: "production"  # production | development | deprecated
+  author:
+    - "HRISHIKESH YALAVARTHI"
+
+name: ""
+# Convention: SOC-UC-{number}-{Datasource}-{Short Description}
+
+description: |
+  ""
+
+enabled: true             # true = prod/enabled | false = prod/disabled
+
+type: esql
+language: esql
+
+severity: ""              # low | medium | high | critical
+risk_score: 0             # low=21 medium=47 high=73 critical=99
+
+tags:
+  - ""
+
+index:
+  - ""
+
+query: |
+  FROM logs-*
+  | KEEP @timestamp
+  | WHERE ...
+
+interval: "5m"            # 5m | 15m | 1h | 4h | 24h
+from: "now-10m"           # interval + 5min buffer
+to: "now"
+
+timestamp_override: "event.ingested"
+
+threat:
+  - framework: "MITRE ATT&CK"
+    tactic:
+      id: ""
+      name: ""
+      reference: ""
+    technique:
+      - id: ""
+        name: ""
+        reference: ""
+        subtechnique: []
+
+investigation_fields:
+  field_names:
+    - ""
+
+note: |
+  ## Triage and Analysis
+  ### What triggered this alert
+  -
+  ### What to investigate
+  -
+  ### False positive guidance
+  -
+
+false_positives:
+  - ""
+
+references:
+  - ""
+
+max_signals: 100
+actions: []

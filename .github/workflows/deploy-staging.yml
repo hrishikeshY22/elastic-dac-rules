@@ -1,0 +1,91 @@
+name: Deploy Rules to Elastic STAGING
+
+on:
+  workflow_dispatch:
+    inputs:
+      folder:
+        description: "Deploy from: staging or prod"
+        required: true
+        default: "staging"
+        type: choice
+        options:
+          - staging
+          - prod
+
+jobs:
+  deploy-staging:
+    name: Deploy to Elastic STAGING
+    runs-on: ubuntu-latest
+    steps:
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install pyyaml requests
+
+      - name: Deploy to Staging
+        env:
+          ELASTIC_STAGING_URL: ${{ secrets.ELASTIC_STAGING_URL }}
+          ELASTIC_STAGING_API_KEY: ${{ secrets.ELASTIC_STAGING_API_KEY }}
+        run: |
+          echo "Deploying from rules/${{ inputs.folder }}"
+          python3 << 'PYEOF'
+          import yaml, os, glob, requests
+
+          KB = os.environ.get("ELASTIC_STAGING_URL","")
+          KEY = os.environ.get("ELASTIC_STAGING_API_KEY","")
+
+          if not KB or not KEY:
+              print("No staging credentials configured")
+              print("Add ELASTIC_STAGING_URL and ELASTIC_STAGING_API_KEY!")
+              exit(0)
+
+          HEADERS = {
+              "Authorization": f"ApiKey {KEY}",
+              "kbn-xsrf": "true",
+              "Content-Type": "application/json"
+          }
+
+          STRIP = ["schema_version","metadata","id","version",
+                   "revision","created_at","updated_at"]
+
+          folder = "rules/${{ inputs.folder }}"
+          rules = [f for f in
+                   glob.glob(f"{folder}/**/*.yml", recursive=True)
+                   if ".gitkeep" not in f]
+
+          print(f"Found {len(rules)} rules")
+
+          for f in sorted(rules):
+              rule = yaml.safe_load(open(f))
+              rid = rule.get("rule_id")
+              name = rule.get("name", f)
+              payload = {k:v for k,v in rule.items()
+                         if k not in STRIP}
+
+              check = requests.get(
+                  f"{KB}/api/detection_engine/rules?rule_id={rid}",
+                  headers=HEADERS
+              )
+              if check.status_code == 200:
+                  resp = requests.put(
+                      f"{KB}/api/detection_engine/rules",
+                      headers=HEADERS, json=payload
+                  )
+                  action = "UPDATED"
+              else:
+                  resp = requests.post(
+                      f"{KB}/api/detection_engine/rules",
+                      headers=HEADERS, json=payload
+                  )
+                  action = "CREATED"
+
+              status = "OK" if resp.status_code in [200,201] else "FAIL"
+              print(f"{status} {action}: {name}")
+          PYEOF

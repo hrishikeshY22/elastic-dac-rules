@@ -1,0 +1,62 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "DaC Detection Rule Schema v1",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "rule_id",
+    "metadata",
+    "name",
+    "description",
+    "enabled",
+    "type",
+    "language",
+    "severity",
+    "risk_score",
+    "tags",
+    "index",
+    "query",
+    "interval",
+    "from",
+    "to"
+  ],
+  "properties": {
+    "schema_version": {"type": "integer", "const": 1},
+    "rule_id": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+    },
+    "metadata": {
+      "type": "object",
+      "required": ["creation_date", "updated_date", "maturity", "author"],
+      "properties": {
+        "creation_date": {"type": "string", "pattern": "^[0-9]{4}/[0-9]{2}/[0-9]{2}$"},
+        "updated_date": {"type": "string", "pattern": "^[0-9]{4}/[0-9]{2}/[0-9]{2}$"},
+        "maturity": {"type": "string", "enum": ["production", "development", "deprecated"]},
+        "author": {"type": "array", "minItems": 1, "items": {"type": "string"}}
+      }
+    },
+    "name": {"type": "string", "minLength": 5},
+    "description": {"type": "string", "minLength": 10},
+    "enabled": {"type": "boolean"},
+    "type": {"type": "string", "enum": ["esql"]},
+    "language": {"type": "string", "enum": ["esql"]},
+    "severity": {"type": "string", "enum": ["low", "medium", "high", "critical"]},
+    "risk_score": {"type": "integer", "minimum": 0, "maximum": 100},
+    "tags": {"type": "array", "minItems": 1, "items": {"type": "string"}},
+    "index": {"type": "array", "minItems": 1, "items": {"type": "string"}},
+    "query": {"type": "string", "minLength": 10},
+    "interval": {"type": "string", "pattern": "^[0-9]+(m|h)$"},
+    "from": {"type": "string", "pattern": "^now-[0-9]+(s|m|h)$"},
+    "to": {"type": "string", "const": "now"},
+    "timestamp_override": {"type": "string"},
+    "threat": {"type": "array"},
+    "investigation_fields": {"type": "object"},
+    "note": {"type": "string"},
+    "false_positives": {"type": "array", "items": {"type": "string"}},
+    "references": {"type": "array", "items": {"type": "string"}},
+    "max_signals": {"type": "integer"},
+    "actions": {"type": "array", "maxItems": 0}
+  },
+  "additionalProperties": false
+}
