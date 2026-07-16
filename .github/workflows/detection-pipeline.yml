@@ -1,0 +1,269 @@
+name: Elastic Detection Pipeline
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+    types:
+      - opened
+      - synchronize
+      - reopened
+
+permissions:
+  contents: read
+  pull-requests: write
+  checks: write
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+
+  validate:
+    name: Validate Detection Rules
+    runs-on: ubuntu-latest
+    steps:
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install pyyaml
+
+      - name: Count rules
+        run: |
+          COUNT=$(find rules/staging \
+            -name "*.yml" ! -name ".gitkeep" \
+            2>/dev/null | wc -l)
+          echo "Found $COUNT rules in staging:"
+          find rules/staging -name "*.yml" \
+            ! -name ".gitkeep" 2>/dev/null | sort
+
+      - name: Validate YAML syntax
+        run: |
+          pip install pyyaml
+          for f in $(find rules/staging \
+            -name "*.yml" ! -name ".gitkeep"); do
+            python3 -c "
+          import yaml, sys
+          try:
+              yaml.safe_load(open('$f'))
+              print('PASS: $f')
+          except Exception as e:
+              print('FAIL: $f - ' + str(e))
+              sys.exit(1)
+            "
+          done
+
+      - name: Check required fields
+        run: |
+          python3 << 'PYEOF'
+          import yaml, glob, sys
+
+          REQUIRED = [
+              "schema_version", "rule_id", "name",
+              "description", "enabled", "type",
+              "language", "severity", "risk_score",
+              "tags", "index", "query",
+              "interval", "from", "to"
+          ]
+
+          rules = [
+              f for f in glob.glob("rules/staging/*.yml")
+              if ".gitkeep" not in f
+          ]
+
+          failed = 0
+          for f in sorted(rules):
+              rule_data = yaml.safe_load(open(f))
+              rule = rule_data.get("rule", rule_data)
+              name = rule_data.get("name", f)
+              errors = []
+
+              for field in REQUIRED:
+                  if field not in rule_data and field not in rule:
+                      errors.append(f"Missing: {field}")
+
+              if not isinstance(rule_data.get("enabled"), bool):
+                  errors.append(
+                      f"enabled must be boolean, "
+                      f"got: {type(rule_data.get('enabled')).__name__}"
+                  )
+
+              if errors:
+                  print(f"FAIL: {name}")
+                  for e in errors:
+                      print(f"  -> {e}")
+                  failed += 1
+              else:
+                  print(f"PASS: {name}")
+
+          sys.exit(1 if failed > 0 else 0)
+          PYEOF
+
+  test:
+    name: Test Detection Rules
+    runs-on: ubuntu-latest
+    needs: validate
+    steps:
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install pyyaml
+
+      - name: Test TOML syntax
+        run: python3 tests/test_toml_syntax.py
+
+      - name: Test no duplicate rule IDs
+        run: python3 tests/test_no_duplicates.py
+
+      - name: Test severity values
+        run: python3 tests/test_severity.py
+
+      - name: Test Team tag exists
+        run: python3 tests/test_team_tag.py
+
+  pr-comment:
+    name: Post PR Review Comment
+    runs-on: ubuntu-latest
+    needs: test
+    if: github.event_name == 'pull_request'
+    steps:
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Post PR comment
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const path = require('path');
+
+            function findYml(dir) {
+              let files = [];
+              if (!fs.existsSync(dir)) return files;
+              for (const f of fs.readdirSync(dir)) {
+                const full = path.join(dir, f);
+                if (fs.statSync(full).isDirectory()) {
+                  files = files.concat(findYml(full));
+                } else if (f.endsWith('.yml') &&
+                           !f.includes('.gitkeep')) {
+                  files.push(full);
+                }
+              }
+              return files;
+            }
+
+            const rules = findYml('rules/staging').sort();
+            let rows = '';
+            for (const f of rules) {
+              const c = fs.readFileSync(f, 'utf8');
+              const n = (c.match(/^name:\s*["']?(.+?)["']?\s*$/m)
+                || ['','Unknown'])[1];
+              const s = (c.match(/^severity:\s*["']?(.+?)["']?\s*$/m)
+                || ['','?'])[1];
+              const r = (c.match(/^risk_score:\s*(\d+)/m)
+                || ['','?'])[1];
+              const id = (c.match(/^rule_id:\s*["']?(.+?)["']?\s*$/m)
+                || ['','?'])[1];
+              rows += `| ${n} | ${s} | ${r} | \`${id.substring(0,8)}...\` |\n`;
+            }
+
+            const body = [
+              '## Elastic DaC Pipeline Results',
+              '',
+              'All automated checks passed!',
+              '',
+              '### Rules in this PR:',
+              '| Rule Name | Severity | Risk | Rule ID |',
+              '|-----------|----------|------|---------|',
+              rows,
+              '### Human Review Checklist:',
+              '- [ ] Detection logic is correct',
+              '- [ ] Tested against real logs in Elastic',
+              '- [ ] False positives are excluded',
+              '- [ ] MITRE ATT&CK mapping is accurate',
+              '- [ ] Severity and risk_score match',
+              '- [ ] Team tag is present',
+              '',
+              '---',
+              '*Elastic DaC Pipeline — Phase 1*'
+            ].join('\n');
+
+            await github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: body
+            });
+
+  deploy:
+    name: Deploy Rules Summary
+    runs-on: ubuntu-latest
+    needs: test
+    if: >
+      github.ref == 'refs/heads/main' &&
+      github.event_name == 'push'
+    steps:
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Write summary
+        run: |
+          echo "## Elastic DaC Deployment" \
+            >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Rule | Severity | Risk |" \
+            >> $GITHUB_STEP_SUMMARY
+          echo "|------|----------|------|" \
+            >> $GITHUB_STEP_SUMMARY
+          for f in $(find rules -name "*.yml" \
+            ! -name ".gitkeep" | sort); do
+            N=$(grep '^name:' "$f" \
+              | head -1 | sed 's/name: //' \
+              | tr -d '"')
+            S=$(grep '^severity:' "$f" \
+              | head -1 | sed 's/severity: //' \
+              | tr -d '"')
+            R=$(grep '^risk_score:' "$f" \
+              | head -1 | cut -d':' -f2 \
+              | tr -d ' ')
+            echo "| $N | $S | $R |" \
+              >> $GITHUB_STEP_SUMMARY
+          done
+
+  status:
+    name: Pipeline Status
+    runs-on: ubuntu-latest
+    needs: [validate, test]
+    if: always()
+    steps:
+      - name: Final status
+        run: |
+          V="${{ needs.validate.result }}"
+          T="${{ needs.test.result }}"
+          echo "Validate: $V | Test: $T"
+          if [ "$V" = "success" ] && \
+             [ "$T" = "success" ]; then
+            echo "PIPELINE PASSED!"
+          else
+            echo "PIPELINE FAILED!"
+            exit 1
+          fi
