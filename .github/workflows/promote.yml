@@ -16,10 +16,19 @@ jobs:
     runs-on: ubuntu-latest
     steps:
 
-      - name: Checkout
+      # STEP 1: Generate short-lived token from GitHub App
+      - name: Generate App Token
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.APP_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+
+      # STEP 2: Checkout using App token (not default token!)
+      - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ steps.app-token.outputs.token }}
           fetch-depth: 2
 
       - name: Setup Python
@@ -68,11 +77,20 @@ jobs:
               promoted.append(dest)
 
           if promoted:
-              subprocess.run(["git","config","user.name","DaC Automation"])
-              subprocess.run(["git","config","user.email","dac@noreply.github.com"])
+              # Commit shows as GitHub App bot not personal account
+              subprocess.run([
+                  "git", "config", "user.name",
+                  "elastic-dac-pipeline[bot]"
+              ])
+              subprocess.run([
+                  "git", "config", "user.email",
+                  "elastic-dac-pipeline[bot]@users.noreply.github.com"
+              ])
               subprocess.run(["git","add","rules/prod/"])
-              subprocess.run(["git","commit","-m",
-                  f"Promote {len(promoted)} rule(s) to prod [skip ci]"])
+              subprocess.run([
+                  "git","commit","-m",
+                  f"Promote {len(promoted)} rule(s) to prod [skip ci]"
+              ])
               subprocess.run(["git","push","origin","main"])
               print(f"Promoted {len(promoted)} rules!")
           PYEOF
