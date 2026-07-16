@@ -18,57 +18,67 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Verify Python available
-        run: |
-          python3 --version
-          pip3 --version || pip --version
+        run: python3 --version
+
+      - name: Create virtual environment
+        run: python3 -m venv /tmp/dac-deploy-venv
 
       - name: Install dependencies
         run: |
-          pip3 install pyyaml requests --quiet \
-            || pip install pyyaml requests --quiet
+          /tmp/dac-deploy-venv/bin/pip install \
+            pyyaml requests --quiet
 
       - name: Deploy rules to Elastic
         env:
           ELASTIC_PROD_URL: ${{ secrets.ELASTIC_PROD_URL }}
           ELASTIC_PROD_API_KEY: ${{ secrets.ELASTIC_PROD_API_KEY }}
         run: |
-          python3 << 'PYEOF'
+          /tmp/dac-deploy-venv/bin/python3 << 'PYEOF'
           import yaml, os, glob, requests, sys
 
-          KB = os.environ.get("ELASTIC_PROD_URL", "")
+          KB  = os.environ.get("ELASTIC_PROD_URL", "")
           KEY = os.environ.get("ELASTIC_PROD_API_KEY", "")
 
           if not KB or not KEY:
               print("ERROR: Missing ELASTIC_PROD_URL or ELASTIC_PROD_API_KEY")
-              print("Add these as GitHub Secrets!")
               sys.exit(1)
 
           HEADERS = {
               "Authorization": f"ApiKey {KEY}",
-              "kbn-xsrf": "true",
-              "Content-Type": "application/json"
+              "kbn-xsrf":      "true",
+              "Content-Type":  "application/json"
           }
 
-          # Fields to strip before sending to Elastic API
+          # Server-managed fields — never submit these to the API
           STRIP = [
-              "schema_version", "metadata",
-              "id", "version", "revision",
-              "created_at", "created_by",
-              "updated_at", "updated_by",
-              "immutable", "rule_source",
-              "output_index", "execution_summary",
-              "risk_score_mapping", "severity_mapping",
-              "related_integrations", "required_fields",
-              "meta", "setup"
+              "schema_version",
+              "metadata",
+              "id",
+              "version",
+              "revision",
+              "created_at",
+              "created_by",
+              "updated_at",
+              "updated_by",
+              "immutable",
+              "rule_source",
+              "output_index",
+              "execution_summary",
+              "risk_score_mapping",
+              "severity_mapping",
+              "related_integrations",
+              "required_fields",
+              "meta",
+              "setup",
           ]
 
           deployed = 0
-          failed = 0
-          errors = []
+          failed   = 0
+          errors   = []
 
           for folder, enabled in [
-              ("rules/prod/enabled", True),
-              ("rules/prod/disabled", False)
+              ("rules/prod/enabled",  True),
+              ("rules/prod/disabled", False),
           ]:
               for f in sorted(glob.glob(f"{folder}/*.yml")):
                   if ".gitkeep" in f:
@@ -78,13 +88,13 @@ jobs:
                       rule = yaml.safe_load(fh)
 
                   rule_id = rule.get("rule_id", "")
-                  name = rule.get("name", f)
+                  name    = rule.get("name", f)
 
                   if not rule_id:
                       print(f"SKIP: {name} — missing rule_id")
                       continue
 
-                  # Build payload — strip server-managed fields
+                  # Build payload
                   payload = {
                       k: v for k, v in rule.items()
                       if k not in STRIP
@@ -92,25 +102,25 @@ jobs:
                   payload["enabled"] = enabled
                   payload["actions"] = []
 
-                  # Check if rule exists
+                  # Check if rule already exists in Elastic
                   check = requests.get(
                       f"{KB}/api/detection_engine/rules"
                       f"?rule_id={rule_id}",
-                      headers=HEADERS
+                      headers=HEADERS,
                   )
 
                   if check.status_code == 200:
-                      resp = requests.put(
+                      resp   = requests.put(
                           f"{KB}/api/detection_engine/rules",
                           headers=HEADERS,
-                          json=payload
+                          json=payload,
                       )
                       action = "UPDATED"
                   else:
-                      resp = requests.post(
+                      resp   = requests.post(
                           f"{KB}/api/detection_engine/rules",
                           headers=HEADERS,
-                          json=payload
+                          json=payload,
                       )
                       action = "CREATED"
 
@@ -118,8 +128,8 @@ jobs:
                       print(f"{action}: {name}")
                       deployed += 1
                   else:
-                      print(f"FAILED: {name}")
-                      print(f"  Status: {resp.status_code}")
+                      print(f"FAILED:  {name}")
+                      print(f"  Status:   {resp.status_code}")
                       print(f"  Response: {resp.text[:300]}")
                       failed += 1
                       errors.append(name)
@@ -130,7 +140,7 @@ jobs:
           print(f"{'='*50}")
 
           if failed > 0:
-              print(f"\nFailed rules:")
+              print("\nFailed rules:")
               for e in errors:
                   print(f"  - {e}")
               sys.exit(1)
@@ -138,11 +148,15 @@ jobs:
           print("\nAll rules deployed successfully!")
           PYEOF
 
+      - name: Clean up virtual environment
+        if: always()
+        run: rm -rf /tmp/dac-deploy-venv
+
       - name: Write deployment summary
         run: |
           echo "## Elastic DaC Deployment" \
             >> $GITHUB_STEP_SUMMARY
-          echo "**Author:** HRISHIKESH YALAVARTHI" \
+          echo "**Target:** Elastic PROD" \
             >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "| Rule | Folder | Enabled |" \
@@ -154,8 +168,8 @@ jobs:
             N=$(grep '^name:' "$f" \
               | head -1 | sed 's/name: //' | tr -d '"')
             FOLDER=$(echo "$f" | grep -o "enabled\|disabled")
-            ENABLED=$([ "$FOLDER" = "enabled" ] \
+            EN=$([ "$FOLDER" = "enabled" ] \
               && echo "true" || echo "false")
-            echo "| $N | $FOLDER | $ENABLED |" \
+            echo "| $N | $FOLDER | $EN |" \
               >> $GITHUB_STEP_SUMMARY
           done
