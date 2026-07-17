@@ -26,7 +26,7 @@ type: esql
 language: esql
 
 severity: "low"
-risk_score: 21
+risk_score: 22
 
 tags:
   - "Domain: Endpoint"
