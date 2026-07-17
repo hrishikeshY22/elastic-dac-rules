@@ -1,0 +1,103 @@
+schema_version: 1
+
+metadata:
+  creation_date: "2025/07/17"
+  updated_date:  "2025/07/17"
+  maturity: "production"
+  author:
+    - "HRISHIKESH YALAVARTHI"
+
+rule_id: ""
+
+name: "SOC-UC-002-Linux-Id Command Execution Detected"
+
+description: |
+  Detects execution of the id command on Linux systems.
+  Attackers commonly run id after gaining initial access
+  to enumerate current user privileges and group memberships.
+  This is a standard post-exploitation reconnaissance technique
+  associated with MITRE ATT&CK T1033 (System Owner/User Discovery).
+
+author:
+  - "HRISHIKESH YALAVARTHI"
+
+enabled: true
+type: esql
+language: esql
+
+severity: "low"
+risk_score: 21
+
+tags:
+  - "Domain: Endpoint"
+  - "OS: Linux"
+  - "Use Case: Threat Detection"
+  - "Tactic: Discovery"
+  - "T1033"
+  - "Data Source: Elastic Defend"
+
+query: |
+  FROM logs-endpoint.events.*
+  | WHERE event.action == "exec"
+    AND process.name == "id"
+  | KEEP @timestamp, host.name, user.name,
+         process.name, process.command_line,
+         event.dataset
+  | RENAME event.dataset AS logSource
+
+interval: "5m"
+from: "now-10m"
+to: "now"
+
+timestamp_override: "event.ingested"
+timestamp_override_fallback_disabled: false
+
+threat:
+  - framework: "MITRE ATT&CK"
+    tactic:
+      id: "TA0007"
+      name: "Discovery"
+      reference: "https://attack.mitre.org/tactics/TA0007/"
+    technique:
+      - id: "T1033"
+        name: "System Owner/User Discovery"
+        reference: "https://attack.mitre.org/techniques/T1033/"
+        subtechnique: []
+
+note: |
+  ## Triage and Analysis
+
+  ### What triggered this alert
+  The id command was executed on a Linux host indicating
+  a process or user queried current user and group identity.
+
+  ### Possible investigation steps
+  - Examine the parent process of id — shell, script, or unknown binary?
+  - Check if the same user ran other discovery commands (whoami, uname, hostname)
+  - Review authentication logs for the account around the same timestamp
+  - Validate whether the host is expected to have interactive user sessions
+  - Hunt for follow-on commands: curl, wget, nc, bash -i from same process tree
+
+  ### False positive analysis
+  - System administrators verifying user context and group memberships
+  - Automated scripts checking permissions before executing privileged operations
+
+  ### Response and remediation
+  - Contain: no immediate action for low severity — monitor for follow-on activity
+  - Collect: capture process tree, shell history, and auth logs for the session
+  - Eradicate: if malicious, terminate session and review for persistence
+  - Recover: rotate credentials if account compromise is suspected
+  - Escalate if id is followed by privilege escalation or lateral movement
+
+  ### References
+  - https://attack.mitre.org/techniques/T1033/
+
+false_positives:
+  - "System administrators verifying user context and group memberships"
+  - "Automated scripts checking permissions before executing privileged operations"
+
+references:
+  - "https://attack.mitre.org/techniques/T1033/"
+
+max_signals: 100
+actions: []
