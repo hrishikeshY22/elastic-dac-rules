@@ -7,7 +7,7 @@ metadata:
   author:
     - "HRISHIKESH YALAVARTHI"
 
-rule_id: ""
+rule_id: "b33466f8-f461-41da-bdcd-85e9364ec4fb"
 
 name: "SOC-UC-002-Linux-Id Command Execution Detected"
 
