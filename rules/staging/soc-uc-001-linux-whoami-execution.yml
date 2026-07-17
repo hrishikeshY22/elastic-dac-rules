@@ -1,24 +1,27 @@
 schema_version: 1
 
-rule_id: "e95dc932-a8bd-49c9-a21d-d2a5db7334a6"
-
 metadata:
-  creation_date: "2026/07/16"
-  updated_date: "2026/07/15"
+  creation_date: "2025/07/16"
+  updated_date:  "2025/07/17"
   maturity: "production"
   author:
-    - "HRISHIKESH YALAVARTHI - DaC Lab2.0"
+    - "HRISHIKESH YALAVARTHI"
+
+rule_id: "e95dc932-a8bd-49c9-a21d-d2a5db7334a6"
 
 name: "SOC-UC-001-Linux-Whoami Execution Detected"
 
 description: |
   Detects execution of the whoami command on Linux systems.
   Attackers commonly run whoami after gaining initial access
-  to identify current user context and privilege level.
-  This is a common post-exploitation reconnaissance technique.
+  to identify the current user context and privilege level.
+  This is a standard post-exploitation reconnaissance technique
+  associated with MITRE ATT&CK T1033 (System Owner/User Discovery).
+
+author:
+  - "HRISHIKESH YALAVARTHI"
 
 enabled: true
-
 type: esql
 language: esql
 
@@ -26,25 +29,28 @@ severity: "low"
 risk_score: 21
 
 tags:
-  - "Linux"
-  - "Discovery"
+  - "Domain: Endpoint"
+  - "OS: Linux"
+  - "Use Case: Threat Detection"
+  - "Tactic: Discovery"
   - "T1033"
-
-index:
-  - "logs-endpoint.events.*"
+  - "Data Source: Elastic Defend"
 
 query: |
   FROM logs-endpoint.events.*
-  | WHERE event.action == "test"
+  | WHERE event.action == "exec"
     AND process.name == "whoami"
   | KEEP @timestamp, host.name, user.name,
-         process.name, process.command_line
+         process.name, process.command_line,
+         event.dataset
+  | RENAME event.dataset AS logSource
 
 interval: "5m"
 from: "now-10m"
 to: "now"
 
 timestamp_override: "event.ingested"
+timestamp_override_fallback_disabled: false
 
 threat:
   - framework: "MITRE ATT&CK"
@@ -58,46 +64,40 @@ threat:
         reference: "https://attack.mitre.org/techniques/T1033/"
         subtechnique: []
 
-investigation_fields:
-  field_names:
-    - "host.name"
-    - "user.name"
-    - "process.command_line"
-
 note: |
   ## Triage and Analysis
+
   ### What triggered this alert
-  The whoami command was executed on a Linux host.
-  ### What to investigate
-  - Who ran the command and is it expected?
-  - Was this preceded by suspicious login activity?
-  ### False positive guidance
-  - Legitimate admin activity — verify with system owner
+  The whoami command was executed on a Linux host indicating
+  a process or user queried the current user identity.
+
+  ### Possible investigation steps
+  - Examine the parent process of whoami — shell, script, or unknown binary?
+  - Check if the same user ran other discovery commands (id, uname, hostname)
+  - Review authentication logs for the account around the same timestamp
+  - Validate whether the host is expected to have interactive user sessions
+  - Hunt for follow-on commands: curl, wget, nc, bash -i from same process tree
+
+  ### False positive analysis
+  - System administrators running manual diagnostic commands
+  - Automated scripts or config management tools checking execution context
+
+  ### Response and remediation
+  - Contain: no immediate action for low severity — monitor for follow-on activity
+  - Collect: capture process tree, shell history, and auth logs for the session
+  - Eradicate: if malicious, terminate session and review for persistence
+  - Recover: rotate credentials if account compromise is suspected
+  - Escalate if whoami is followed by privilege escalation or lateral movement
+
+  ### References
+  - https://attack.mitre.org/techniques/T1033/
 
 false_positives:
-  - "System administrators running diagnostic commands"
+  - "System administrators running manual diagnostic commands"
+  - "Automated scripts or config management tools checking execution context"
 
 references:
   - "https://attack.mitre.org/techniques/T1033/"
 
 max_signals: 100
 actions: []
-
-note: |
-  ## Triage and Analysis
-
-  ### What triggered this alert
-  The whoami command was executed on a Linux host.
-
-  ### What to investigate
-  - Who ran the command and from which parent process?
-  - Was this preceded by any suspicious login activity?
-  - Is the user account expected to be active on this host?
-
-  ### False positive guidance
-  - System administrators running diagnostic commands
-  - Automated scripts using whoami for environment checks
-
-  ### Response steps
-  - Verify with the system owner if this activity was expected
-  - Check for other suspicious commands executed by same user
