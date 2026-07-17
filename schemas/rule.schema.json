@@ -1,57 +1,51 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "title": "DaC Detection Rule Schema v1 — ES|QL Only",
+  "title": "DaC Detection Rule Schema v1 — ES|QL Only — Elastic 9.4.3",
   "type": "object",
   "required": [
     "schema_version",
-    "rule_id",
     "metadata",
+    "rule_id",
     "name",
     "description",
+    "author",
     "enabled",
     "type",
     "language",
     "severity",
     "risk_score",
     "tags",
-    "index",
     "query",
     "interval",
     "from",
-    "to"
+    "to",
+    "timestamp_override",
+    "timestamp_override_fallback_disabled",
+    "threat",
+    "note",
+    "false_positives",
+    "references",
+    "max_signals",
+    "actions"
   ],
+  "additionalProperties": false,
   "properties": {
-
     "schema_version": {
       "type": "integer",
-      "const": 1,
-      "description": "Must always be 1"
+      "const": 1
     },
-
-    "rule_id": {
-      "type": "string",
-      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
-      "description": "UUID v4 — generated once, never changed"
-    },
-
     "metadata": {
       "type": "object",
-      "required": [
-        "creation_date",
-        "updated_date",
-        "maturity",
-        "author"
-      ],
+      "required": ["creation_date", "updated_date", "maturity", "author"],
+      "additionalProperties": false,
       "properties": {
         "creation_date": {
           "type": "string",
-          "pattern": "^[0-9]{4}/[0-9]{2}/[0-9]{2}$",
-          "description": "YYYY/MM/DD"
+          "pattern": "^[0-9]{4}/[0-9]{2}/[0-9]{2}$"
         },
         "updated_date": {
           "type": "string",
-          "pattern": "^[0-9]{4}/[0-9]{2}/[0-9]{2}$",
-          "description": "YYYY/MM/DD"
+          "pattern": "^[0-9]{4}/[0-9]{2}/[0-9]{2}$"
         },
         "maturity": {
           "type": "string",
@@ -60,106 +54,82 @@
         "author": {
           "type": "array",
           "minItems": 1,
-          "items": {"type": "string"}
+          "items": { "type": "string", "minLength": 1 }
         }
-      },
-      "additionalProperties": false
+      }
     },
-
+    "rule_id": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+    },
     "name": {
       "type": "string",
-      "minLength": 5,
-      "description": "Human readable rule name"
+      "minLength": 5
     },
-
     "description": {
       "type": "string",
-      "minLength": 10,
-      "description": "What this rule detects and why"
+      "minLength": 10
     },
-
+    "author": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string", "minLength": 1 }
+    },
     "enabled": {
-      "type": "boolean",
-      "description": "true = prod/enabled | false = prod/disabled"
+      "type": "boolean"
     },
-
     "type": {
       "type": "string",
-      "const": "esql",
-      "description": "All new rules must be esql"
+      "const": "esql"
     },
-
     "language": {
       "type": "string",
-      "const": "esql",
-      "description": "All new rules must be esql"
+      "const": "esql"
     },
-
     "severity": {
       "type": "string",
       "enum": ["low", "medium", "high", "critical"]
     },
-
     "risk_score": {
       "type": "integer",
-      "minimum": 0,
-      "maximum": 100,
-      "description": "low=21 medium=47 high=73 critical=99"
+      "minimum": 1,
+      "maximum": 100
     },
-
     "tags": {
       "type": "array",
       "minItems": 1,
-      "items": {"type": "string"},
-      "description": "At least one tag required"
+      "items": { "type": "string", "minLength": 1 }
     },
-
-    "index": {
-      "type": "array",
-      "minItems": 1,
-      "items": {"type": "string"},
-      "description": "Index patterns the rule searches"
-    },
-
     "query": {
       "type": "string",
-      "minLength": 10,
-      "description": "ES|QL query"
+      "minLength": 10
     },
-
     "interval": {
       "type": "string",
-      "pattern": "^[0-9]+(m|h)$",
-      "description": "e.g. 5m, 1h, 24h"
+      "pattern": "^[0-9]+(m|h)$"
     },
-
     "from": {
       "type": "string",
-      "pattern": "^now-[0-9]+(s|m|h)$",
-      "description": "Look-back window e.g. now-65m"
+      "pattern": "^now-[0-9]+(s|m|h)$"
     },
-
     "to": {
       "type": "string",
-      "const": "now",
-      "description": "Always now"
+      "const": "now"
     },
-
     "timestamp_override": {
       "type": "string",
-      "description": "Optional — use event.ingested for cloud sources"
+      "const": "event.ingested"
     },
-
     "timestamp_override_fallback_disabled": {
       "type": "boolean",
-      "description": "Optional — false when timestamp_override is set"
+      "const": false
     },
-
     "threat": {
       "type": "array",
       "items": {
         "type": "object",
-        "required": ["framework", "tactic"],
+        "required": ["framework", "tactic", "technique"],
+        "additionalProperties": false,
         "properties": {
           "framework": {
             "type": "string",
@@ -168,33 +138,34 @@
           "tactic": {
             "type": "object",
             "required": ["id", "name", "reference"],
+            "additionalProperties": false,
             "properties": {
-              "id": {"type": "string"},
-              "name": {"type": "string"},
-              "reference": {
-                "type": "string",
-                "description": "Must end with trailing slash"
-              }
+              "id":        { "type": "string", "minLength": 1 },
+              "name":      { "type": "string", "minLength": 1 },
+              "reference": { "type": "string", "minLength": 1 }
             }
           },
           "technique": {
             "type": "array",
+            "minItems": 1,
             "items": {
               "type": "object",
-              "required": ["id", "name", "reference"],
+              "required": ["id", "name", "reference", "subtechnique"],
+              "additionalProperties": false,
               "properties": {
-                "id": {"type": "string"},
-                "name": {"type": "string"},
-                "reference": {"type": "string"},
+                "id":        { "type": "string", "minLength": 1 },
+                "name":      { "type": "string", "minLength": 1 },
+                "reference": { "type": "string", "minLength": 1 },
                 "subtechnique": {
                   "type": "array",
                   "items": {
                     "type": "object",
                     "required": ["id", "name", "reference"],
+                    "additionalProperties": false,
                     "properties": {
-                      "id": {"type": "string"},
-                      "name": {"type": "string"},
-                      "reference": {"type": "string"}
+                      "id":        { "type": "string", "minLength": 1 },
+                      "name":      { "type": "string", "minLength": 1 },
+                      "reference": { "type": "string", "minLength": 1 }
                     }
                   }
                 }
@@ -204,49 +175,25 @@
         }
       }
     },
-
-    "investigation_fields": {
-      "type": "object",
-      "properties": {
-        "field_names": {
-          "type": "array",
-          "items": {"type": "string"}
-        }
-      }
-    },
-
     "note": {
       "type": "string",
-      "description": "Triage and investigation guide"
+      "minLength": 10
     },
-
     "false_positives": {
       "type": "array",
-      "items": {"type": "string"}
+      "items": { "type": "string" }
     },
-
     "references": {
       "type": "array",
-      "items": {"type": "string"}
+      "items": { "type": "string", "minLength": 1 }
     },
-
     "max_signals": {
       "type": "integer",
       "const": 100
     },
-
-    "exceptions_list": {
-      "type": "array",
-      "maxItems": 0,
-      "description": "Always empty in Phase 1"
-    },
-
     "actions": {
       "type": "array",
-      "maxItems": 0,
-      "description": "Always empty — Jira actions managed in Kibana directly"
+      "maxItems": 0
     }
-
-  },
-  "additionalProperties": false
+  }
 }
