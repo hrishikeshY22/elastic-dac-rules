@@ -4,28 +4,44 @@ on:
   pull_request:
     branches:
       - main
-    paths:
-      - 'rules/staging/*.yml'
-      - 'schemas/rule.schema.json'
 
 jobs:
   validate:
     name: Validate Rules in staging
     runs-on: ubuntu-latest
     steps:
-
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check if validation needed
+        id: check
+        run: |
+          CHANGED=$(git diff --name-only origin/main...HEAD)
+          echo "Changed files:"
+          echo "$CHANGED"
+          if echo "$CHANGED" | grep -qE \
+            '^(rules/staging/.*\.yml|schemas/rule\.schema\.json)$'; then
+            echo "run=true" >> $GITHUB_OUTPUT
+            echo "Validation REQUIRED"
+          else
+            echo "run=false" >> $GITHUB_OUTPUT
+            echo "Validation SKIPPED — no rule or schema files changed"
+          fi
 
       - name: Setup Python
+        if: steps.check.outputs.run == 'true'
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
 
       - name: Install dependencies
+        if: steps.check.outputs.run == 'true'
         run: pip install pyyaml jsonschema
 
       - name: Check YAML syntax
+        if: steps.check.outputs.run == 'true'
         run: |
           FAIL=0
           for f in $(find rules/staging \
@@ -43,19 +59,17 @@ jobs:
           [ $FAIL -eq 0 ] || exit 1
 
       - name: Validate against schema
+        if: steps.check.outputs.run == 'true'
         run: |
           python3 << 'PYEOF'
           import yaml, json, jsonschema, glob, sys
-
           schema = json.load(open("schemas/rule.schema.json"))
           rules = [r for r in
                    glob.glob("rules/staging/*.yml")
                    if ".gitkeep" not in r]
-
           if not rules:
               print("No rules in staging")
               sys.exit(0)
-
           passed = failed = 0
           for f in sorted(rules):
               rule = yaml.safe_load(open(f))
@@ -67,34 +81,30 @@ jobs:
                   print(f"FAIL: {f}")
                   print(f"  {e.message}")
                   failed += 1
-
           print(f"\nPassed: {passed} | Failed: {failed}")
           sys.exit(1 if failed > 0 else 0)
           PYEOF
 
       - name: Check severity and risk_score mapping
+        if: steps.check.outputs.run == 'true'
         run: |
           python3 << 'PYEOF'
           import yaml, glob, sys
-
           MAPPING = {
               "low": 21,
               "medium": 47,
               "high": 73,
               "critical": 99
           }
-
           rules = [r for r in
                    glob.glob("rules/staging/*.yml")
                    if ".gitkeep" not in r]
-
           failed = 0
           for f in sorted(rules):
               rule = yaml.safe_load(open(f))
-              sev = rule.get("severity", "")
+              sev  = rule.get("severity", "")
               risk = rule.get("risk_score", 0)
               name = rule.get("name", f)
-
               if sev in MAPPING and risk != MAPPING[sev]:
                   print(f"FAIL: {name}")
                   print(
@@ -105,28 +115,24 @@ jobs:
                   failed += 1
               else:
                   print(f"PASS: {name} [{sev}/{risk}]")
-
           sys.exit(1 if failed > 0 else 0)
           PYEOF
 
       - name: Check no duplicate rule_ids
+        if: steps.check.outputs.run == 'true'
         run: |
           python3 << 'PYEOF'
           import yaml, glob, sys
-
-          # ── Check 1: No duplicates WITHIN staging/ ──────
           print("-- Checking staging/ for duplicates --")
           staging = [
               f for f in glob.glob("rules/staging/*.yml")
               if ".gitkeep" not in f
           ]
-
           staging_seen = {}
           staging_dups = 0
-
           for f in sorted(staging):
               rule = yaml.safe_load(open(f))
-              rid = rule.get("rule_id", "")
+              rid  = rule.get("rule_id", "")
               name = rule.get("name", f)
               if rid in staging_seen:
                   print(f"DUPLICATE in staging: {name}")
@@ -135,41 +141,26 @@ jobs:
               else:
                   staging_seen[rid] = f
                   print(f"UNIQUE: {name}")
-
-          # ── Check 2: No duplicates ACROSS prod folders ──
           print("\n-- Checking prod/ for duplicates --")
           prod_seen = {}
           prod_dups = 0
-
-          for folder in [
-              "rules/prod/enabled",
-              "rules/prod/disabled"
-          ]:
+          for folder in ["rules/prod/enabled", "rules/prod/disabled"]:
               for f in sorted(glob.glob(f"{folder}/*.yml")):
                   if ".gitkeep" in f:
                       continue
                   rule = yaml.safe_load(open(f))
-                  rid = rule.get("rule_id", "")
+                  rid  = rule.get("rule_id", "")
                   name = rule.get("name", f)
                   if rid in prod_seen:
-                      print(
-                          f"DUPLICATE across prod: {name}"
-                      )
+                      print(f"DUPLICATE across prod: {name}")
                       print(f"  Also in: {prod_seen[rid]}")
                       prod_dups += 1
                   else:
                       prod_seen[rid] = f
                       print(f"UNIQUE in prod: {name}")
-
-          # ── NOTE: staging + prod overlap is ALLOWED ─────
-          # Per Phase 1 spec — same rule_id in staging AND
-          # prod is the valid update lifecycle pattern.
-          # We do NOT check across these two locations.
-
           total = staging_dups + prod_dups
           print(f"\nStaging duplicates: {staging_dups}")
           print(f"Prod duplicates:    {prod_dups}")
           print(f"Total failures:     {total}")
-
           sys.exit(1 if total > 0 else 0)
           PYEOF
