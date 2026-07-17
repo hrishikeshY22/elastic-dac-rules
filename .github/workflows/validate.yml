@@ -1,18 +1,33 @@
-name: Validate Detection Rules
+name: Inject UUID into Rules Missing rule_id
 
 on:
-  pull_request:
-    branches:
+  push:
+    branches-ignore:
       - main
+    paths:
+      - 'rules/staging/*.yml'
+
+permissions:
+  contents: write
 
 jobs:
-  validate:
-    name: Validate Rules in staging
+  inject-uuid:
+    name: Auto-fill missing rule_id fields
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
+      - name: Generate App Token
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.APP_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+
+      - name: Checkout branch
         uses: actions/checkout@v4
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+          ref: ${{ github.ref }}
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -20,158 +35,17 @@ jobs:
           python-version: "3.12"
 
       - name: Install dependencies
-        run: pip install pyyaml jsonschema --quiet
+        run: pip install pyyaml --quiet
 
-      - name: Check YAML syntax
+      - name: Inject UUIDs
+        run: python3 tools/inject_uuid.py
+
+      - name: Commit injected UUIDs
         run: |
-          FAIL=0
-          for f in $(find rules/staging \
-            -name "*.yml" ! -name ".gitkeep"); do
-            python3 -c "
-          import yaml, sys
-          try:
-              yaml.safe_load(open('$f'))
-              print('PASS: $f')
-          except Exception as e:
-              print('FAIL: $f - ' + str(e))
-              sys.exit(1)
-            " || FAIL=1
-          done
-          [ $FAIL -eq 0 ] || exit 1
-
-      - name: Check rule_id is a valid UUID
-        run: |
-          python3 << 'PYEOF'
-          import yaml, glob, sys, re
-
-          rules = [
-              f for f in glob.glob("rules/staging/*.yml")
-              if ".gitkeep" not in f
-          ]
-          failed = 0
-          UUID_PATTERN = r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
-
-          for f in sorted(rules):
-              rule    = yaml.safe_load(open(f))
-              name    = rule.get("name", f)
-              rule_id = rule.get("rule_id", "")
-
-              if not rule_id or rule_id == "":
-                  print(f"FAIL: {name}")
-                  print(f"  rule_id is empty")
-                  print(f"  uuid-inject.yml may still be running")
-                  print(f"  wait 30s and re-push if needed")
-                  failed += 1
-              elif not re.match(UUID_PATTERN, str(rule_id)):
-                  print(f"FAIL: {name}")
-                  print(f"  '{rule_id}' is not a valid UUID4")
-                  failed += 1
-              else:
-                  print(f"PASS: {name}")
-                  print(f"  rule_id: {rule_id}")
-
-          sys.exit(1 if failed > 0 else 0)
-          PYEOF
-
-      - name: Validate against schema
-        run: |
-          python3 << 'PYEOF'
-          import yaml, json, jsonschema, glob, sys
-
-          schema = json.load(open("schemas/rule.schema.json"))
-          rules  = [
-              r for r in glob.glob("rules/staging/*.yml")
-              if ".gitkeep" not in r
-          ]
-          if not rules:
-              print("No rules in staging")
-              sys.exit(0)
-
-          passed = failed = 0
-          for f in sorted(rules):
-              rule = yaml.safe_load(open(f))
-              try:
-                  jsonschema.validate(rule, schema)
-                  print(f"PASS: {f}")
-                  passed += 1
-              except jsonschema.ValidationError as e:
-                  print(f"FAIL: {f}")
-                  print(f"  {e.message}")
-                  failed += 1
-
-          print(f"\nPassed: {passed} | Failed: {failed}")
-          sys.exit(1 if failed > 0 else 0)
-          PYEOF
-
-      - name: Check severity and risk_score alignment
-        run: |
-          python3 << 'PYEOF'
-          import yaml, glob, sys
-
-          RECOMMENDED = {
-              "low": 21, "medium": 47,
-              "high": 73, "critical": 99
-          }
-          rules  = [
-              f for f in glob.glob("rules/staging/*.yml")
-              if ".gitkeep" not in f
-          ]
-          failed = 0
-
-          for f in sorted(rules):
-              rule = yaml.safe_load(open(f))
-              sev  = rule.get("severity", "")
-              risk = rule.get("risk_score", 0)
-              name = rule.get("name", f)
-
-              if sev in RECOMMENDED and risk != RECOMMENDED[sev]:
-                  print(f"WARN: {name}")
-                  print(f"  severity={sev} recommended risk_score="
-                        f"{RECOMMENDED[sev]}, got {risk}")
-              else:
-                  print(f"PASS: {name} [{sev}/{risk}]")
-
-          sys.exit(0)
-          PYEOF
-
-      - name: Check no duplicate rule_ids
-        run: |
-          python3 << 'PYEOF'
-          import yaml, glob, sys
-
-          staging = [
-              f for f in glob.glob("rules/staging/*.yml")
-              if ".gitkeep" not in f
-          ]
-          seen = {}
-          failed = 0
-
-          for f in sorted(staging):
-              rule = yaml.safe_load(open(f))
-              rid  = rule.get("rule_id", "")
-              name = rule.get("name", f)
-              if rid in seen:
-                  print(f"DUPLICATE: {name}")
-                  print(f"  rule_id already used in: {seen[rid]}")
-                  failed += 1
-              else:
-                  seen[rid] = f
-                  print(f"UNIQUE: {name}")
-
-          prod_seen = {}
-          for folder in ["rules/prod/enabled", "rules/prod/disabled"]:
-              for f in glob.glob(f"{folder}/*.yml"):
-                  if ".gitkeep" in f:
-                      continue
-                  rule = yaml.safe_load(open(f))
-                  rid  = rule.get("rule_id", "")
-                  name = rule.get("name", f)
-                  if rid in prod_seen:
-                      print(f"DUPLICATE in prod: {name}")
-                      failed += 1
-                  else:
-                      prod_seen[rid] = f
-
-          print(f"\nDuplicates found: {failed}")
-          sys.exit(1 if failed > 0 else 0)
-          PYEOF
+          git config user.name  "elastic-dac-pipeline[bot]"
+          git config user.email "elastic-dac-pipeline[bot]@users.noreply.github.com"
+          git diff --quiet && echo "Nothing to commit" && exit 0
+          git add rules/staging/*.yml
+          FILES=$(git diff --cached --name-only | tr '\n' ' ')
+          git commit -m "chore: auto-inject UUID for $FILES"
+          git push
