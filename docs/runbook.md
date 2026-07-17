@@ -15,3 +15,4 @@ python3 -c "import uuid; print(uuid.uuid4())"
 ## Required GitHub Secrets
 - ELASTIC_PROD_URL
 - ELASTIC_PROD_API_KEY
+- 
