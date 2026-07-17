@@ -1,0 +1,103 @@
+schema_version: 1
+
+metadata:
+  creation_date: "2025/07/17"
+  updated_date:  "2025/07/17"
+  maturity: "production"
+  author:
+    - "HRISHIKESH YALAVARTHI"
+
+rule_id: ""
+
+name: "SOC-UC-003-Linux-Uname Execution Detected"
+
+description: |
+  Detects execution of the uname command on Linux systems.
+  Attackers run uname -a after gaining access to enumerate
+  kernel version, OS details, and architecture information.
+  This is a standard post-exploitation reconnaissance technique
+  associated with MITRE ATT&CK T1082 (System Information Discovery).
+
+author:
+  - "HRISHIKESH YALAVARTHI"
+
+enabled: true
+type: esql
+language: esql
+
+severity: "low"
+risk_score: 21
+
+tags:
+  - "Domain: Endpoint"
+  - "OS: Linux"
+  - "Use Case: Threat Detection"
+  - "Tactic: Discovery"
+  - "T1082"
+  - "Data Source: Elastic Defend"
+
+query: |
+  FROM logs-endpoint.events.*
+  | WHERE event.action == "exec"
+    AND process.name == "uname"
+  | KEEP @timestamp, host.name, user.name,
+         process.name, process.command_line,
+         event.dataset
+  | RENAME event.dataset AS logSource
+
+interval: "5m"
+from: "now-10m"
+to: "now"
+
+timestamp_override: "event.ingested"
+timestamp_override_fallback_disabled: false
+
+threat:
+  - framework: "MITRE ATT&CK"
+    tactic:
+      id: "TA0007"
+      name: "Discovery"
+      reference: "https://attack.mitre.org/tactics/TA0007/"
+    technique:
+      - id: "T1082"
+        name: "System Information Discovery"
+        reference: "https://attack.mitre.org/techniques/T1082/"
+        subtechnique: []
+
+note: |
+  ## Triage and Analysis
+
+  ### What triggered this alert
+  The uname command was executed on a Linux host indicating
+  a process or user queried system and kernel information.
+
+  ### Possible investigation steps
+  - Examine the parent process of uname — shell, script, or unknown binary?
+  - Check if the same user ran other discovery commands (whoami, id, hostname)
+  - Review authentication logs for the account around the same timestamp
+  - Validate whether the host is expected to have interactive user sessions
+  - Hunt for follow-on commands: curl, wget, nc from the same process tree
+
+  ### False positive analysis
+  - System administrators checking kernel version before patching
+  - Automated scripts collecting system information for inventory
+
+  ### Response and remediation
+  - Contain: no immediate action for low severity — monitor for follow-on activity
+  - Collect: capture process tree, shell history, and auth logs for the session
+  - Eradicate: if malicious, terminate session and review for persistence
+  - Recover: rotate credentials if account compromise is suspected
+  - Escalate if uname is followed by privilege escalation attempts
+
+  ### References
+  - https://attack.mitre.org/techniques/T1082/
+
+false_positives:
+  - "System administrators checking kernel version before patching"
+  - "Automated scripts collecting system information for inventory"
+
+references:
+  - "https://attack.mitre.org/techniques/T1082/"
+
+max_signals: 100
+actions: []
