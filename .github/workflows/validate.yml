@@ -4,6 +4,9 @@ on:
   pull_request:
     branches:
       - main
+    paths:
+      - 'rules/staging/*.yml'
+      - 'schemas/rule.schema.json'
 
 jobs:
   validate:
