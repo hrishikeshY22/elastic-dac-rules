@@ -1,0 +1,135 @@
+schema_version: 1
+
+metadata:
+  creation_date: "2025/07/23"
+  updated_date:  "2025/07/23"
+  maturity: "production"
+  author:
+    - "HRISHIKESH YALAVARTHI"
+
+rule_id: "6e3855d8-a0b9-4f5d-8060-2c95343a9d1a"
+
+name: "SOC-UC-002-Linux-Suspicious Base64 Encoded Command Execution"
+
+description: |
+  Detects execution of base64 encoded commands on Linux systems via
+  bash or sh with the -c flag combined with base64 decode pipes.
+  Attackers use base64 encoding to obfuscate malicious payloads,
+  bypass simple string-based detections, and execute commands
+  without writing to disk. This technique is associated with
+  MITRE ATT&CK T1140 (Deobfuscate/Decode Files or Information)
+  and is commonly observed during initial access and execution phases.
+
+author:
+  - "HRISHIKESH YALAVARTHI"
+
+enabled: true
+type: esql
+language: esql
+
+severity: "medium"
+risk_score: 47
+
+tags:
+  - "Domain: Endpoint"
+  - "OS: Linux"
+  - "Use Case: Threat Detection"
+  - "Tactic: Defense Evasion"
+  - "T1140"
+  - "Data Source: Elastic Defend"
+
+query: |
+  FROM logs-endpoint.events.*
+  | WHERE event.action == "exec"
+    AND process.parent.name IN ("bash", "sh", "zsh")
+    AND process.name == "base64"
+  | KEEP @timestamp, host.name, user.name,
+         process.name, process.command_line,
+         process.parent.name, process.parent.command_line,
+         event.dataset
+  | RENAME event.dataset AS logSource
+
+interval: "5m"
+from: "now-10m"
+to: "now"
+
+timestamp_override: "event.ingested"
+timestamp_override_fallback_disabled: false
+
+threat:
+  - framework: "MITRE ATT&CK"
+    tactic:
+      id: "TA0005"
+      name: "Defense Evasion"
+      reference: "https://attack.mitre.org/tactics/TA0005/"
+    technique:
+      - id: "T1140"
+        name: "Deobfuscate/Decode Files or Information"
+        reference: "https://attack.mitre.org/techniques/T1140/"
+        subtechnique: []
+  - framework: "MITRE ATT&CK"
+    tactic:
+      id: "TA0002"
+      name: "Execution"
+      reference: "https://attack.mitre.org/tactics/TA0002/"
+    technique:
+      - id: "T1059"
+        name: "Command and Scripting Interpreter"
+        reference: "https://attack.mitre.org/techniques/T1059/"
+        subtechnique:
+          - id: "T1059.004"
+            name: "Unix Shell"
+            reference: "https://attack.mitre.org/techniques/T1059/004/"
+
+note: |
+  ## Triage and Analysis
+
+  ### What triggered this alert
+  A base64 binary was executed as a child process of a shell on a
+  Linux host indicating a possible attempt to decode and execute
+  an obfuscated payload.
+
+  ### Possible investigation steps
+  - Examine process.parent.command_line to see the full shell command
+    that spawned the base64 process
+  - Check if base64 output was piped to bash, sh, or eval which would
+    indicate direct execution of decoded payload
+  - Review the full process tree for the session to identify preceding
+    download commands such as curl or wget
+  - Validate whether the user account is expected to run base64
+    decode operations on this host
+  - Hunt for any files written to disk around the same timestamp
+    that may contain the decoded payload
+
+  ### False positive analysis
+  - Developers decoding base64 encoded configuration or secrets
+    as part of legitimate build or deploy scripts
+  - System administrators using base64 for data transfer or
+    encoding tasks in maintenance scripts
+
+  ### Response and remediation
+  - Contain: isolate the host if base64 output was piped to a shell
+    interpreter confirming payload execution
+  - Collect: capture the full process tree, decoded payload if
+    recoverable, and any files written during the session
+  - Eradicate: remove any dropped payloads, persistence entries,
+    or backdoors installed by the decoded command
+  - Recover: rotate credentials for the affected user account
+    and restore host from known-good state if compromise confirmed
+  - Escalate immediately if decoded payload shows network connections
+    or privilege escalation attempts
+
+  ### References
+  - https://attack.mitre.org/techniques/T1140/
+  - https://attack.mitre.org/techniques/T1059/004/
+
+false_positives:
+  - "Developers decoding base64 encoded configuration or secrets in build scripts"
+  - "System administrators using base64 for data transfer in maintenance scripts"
+
+references:
+  - "https://attack.mitre.org/techniques/T1140/"
+  - "https://attack.mitre.org/techniques/T1059/004/"
+
+max_signals: 100
+actions: []
