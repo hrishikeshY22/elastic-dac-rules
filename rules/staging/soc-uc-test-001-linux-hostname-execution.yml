@@ -7,7 +7,7 @@ metadata:
   author:
     - "HRISHIKESH YALAVARTHI"
 
-rule_id: ""
+rule_id: "5a9cf21e-b521-4979-af11-bb4f4d3acfad"
 
 name: "SOC-UC-TEST-001-Linux-Hostname Execution Detected"
 
