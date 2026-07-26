@@ -1,0 +1,139 @@
+schema_version: 1
+
+metadata:
+  creation_date: "2025/07/23"
+  updated_date:  "2025/07/23"
+  maturity: "production"
+  author:
+    - "HRISHIKESH YALAVARTHI"
+
+rule_id: ""
+
+name: "SOC-UC-005-Linux-Crontab Modification for Persistence"
+
+description: |
+  Detects modifications to crontab files or execution of the crontab
+  command on Linux systems by non-root users or unexpected processes.
+  Attackers abuse cron to establish persistence by scheduling malicious
+  commands to execute at regular intervals, surviving reboots and
+  maintaining long-term access without requiring active sessions.
+  This technique is associated with MITRE ATT&CK T1053.003
+  (Scheduled Task/Job: Cron) and is commonly observed in the
+  persistence phase following initial compromise.
+
+author:
+  - "HRISHIKESH YALAVARTHI"
+
+enabled: true
+type: esql
+language: esql
+
+severity: "high"
+risk_score: 73
+
+tags:
+  - "Domain: Endpoint"
+  - "OS: Linux"
+  - "Use Case: Threat Detection"
+  - "Tactic: Persistence"
+  - "T1053"
+  - "Data Source: Elastic Defend"
+
+query: |
+  FROM logs-endpoint.events.*
+  | WHERE event.action == "exec"
+    AND process.name == "crontab"
+    AND process.args LIKE "*-e*"
+    AND NOT user.name IN ("root", "cron", "daemon")
+  | KEEP @timestamp, host.name, user.name,
+         process.name, process.args,
+         process.command_line,
+         process.parent.name,
+         event.dataset
+  | RENAME event.dataset AS logSource
+
+interval: "5m"
+from: "now-10m"
+to: "now"
+
+timestamp_override: "event.ingested"
+timestamp_override_fallback_disabled: false
+
+threat:
+  - framework: "MITRE ATT&CK"
+    tactic:
+      id: "TA0003"
+      name: "Persistence"
+      reference: "https://attack.mitre.org/tactics/TA0003/"
+    technique:
+      - id: "T1053"
+        name: "Scheduled Task/Job"
+        reference: "https://attack.mitre.org/techniques/T1053/"
+        subtechnique:
+          - id: "T1053.003"
+            name: "Cron"
+            reference: "https://attack.mitre.org/techniques/T1053/003/"
+  - framework: "MITRE ATT&CK"
+    tactic:
+      id: "TA0002"
+      name: "Execution"
+      reference: "https://attack.mitre.org/tactics/TA0002/"
+    technique:
+      - id: "T1053"
+        name: "Scheduled Task/Job"
+        reference: "https://attack.mitre.org/techniques/T1053/"
+        subtechnique:
+          - id: "T1053.003"
+            name: "Cron"
+            reference: "https://attack.mitre.org/techniques/T1053/003/"
+
+note: |
+  ## Triage and Analysis
+
+  ### What triggered this alert
+  The crontab command was executed with the edit flag by a
+  non-privileged user on a Linux host indicating a possible
+  attempt to establish persistence via a scheduled cron job.
+
+  ### Possible investigation steps
+  - Identify the user who ran crontab and determine whether
+    they have a legitimate business reason to modify cron jobs
+  - Check the current crontab entries for the user by reviewing
+    file write events to /var/spool/cron/ around the same time
+  - Examine the parent process that spawned crontab to determine
+    whether it was an interactive shell or an automated process
+  - Correlate with other suspicious activity from the same user
+    such as downloads, reverse shells, or privilege escalation
+  - Check /etc/cron.d/ /etc/cron.daily/ and /etc/cron.hourly/
+    for any newly created or modified files in the same window
+
+  ### False positive analysis
+  - Developers or administrators legitimately scheduling backup
+    log rotation or maintenance scripts via personal crontabs
+  - Automated configuration management tools such as Ansible
+    or Puppet that manage cron entries as part of provisioning
+
+  ### Response and remediation
+  - Contain: review and remove any malicious cron entries
+    immediately to prevent scheduled execution of payloads
+  - Collect: capture the full crontab content for the user
+    preserve any scripts referenced in the cron entries
+  - Eradicate: delete malicious cron entries remove any
+    payloads or scripts scheduled to run by the attacker
+  - Recover: audit all crontabs across the host for other
+    malicious entries rotate credentials for affected accounts
+  - Escalate immediately if the cron entry references a
+    network callback curl wget or reverse shell command
+
+  ### References
+  - https://attack.mitre.org/techniques/T1053/003/
+
+false_positives:
+  - "Developers or administrators scheduling legitimate maintenance scripts via crontab"
+  - "Configuration management tools managing cron entries during provisioning"
+
+references:
+  - "https://attack.mitre.org/techniques/T1053/003/"
+
+max_signals: 100
+actions: []
