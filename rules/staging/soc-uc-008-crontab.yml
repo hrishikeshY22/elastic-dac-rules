@@ -7,7 +7,7 @@ metadata:
   author:
     - "HRISHIKESH YALAVARTHI"
 
-rule_id: ""
+rule_id: "9fda9528-199b-4dc0-bae9-cc02f5c0bffb"
 
 name: "SOC-UC-005-Linux-Crontab Modification for Persistence"
 

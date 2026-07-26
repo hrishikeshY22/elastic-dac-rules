@@ -7,7 +7,7 @@ metadata:
   author:
     - "HRISHIKESH YALAVARTHI"
 
-rule_id: ""
+rule_id: "6e3855d8-a0b9-4f5d-8060-2c95343a9d1a"
 
 name: "SOC-UC-002-Linux-Suspicious Base64 Encoded Command Execution"
 
